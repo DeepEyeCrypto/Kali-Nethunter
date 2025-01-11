@@ -20,9 +20,8 @@ Before running the script, ensure you have:
 ## Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/DeepEyeCrypto/Ubuntu-Proot.git
-   cd Ubuntu-Proot
-   chmod +x install_proot_x11.sh start-distro.sh
-   ./install_proot_x11.sh
-   proot-distro login ubuntu
-   
+   termux-setup-storage
+   pkg install wget
+   wget -O install-nethunter-termux https://offs.ec/2MceZWr
+   chmod +x install-nethunter-termux
+   ./install-nethunter-termux
