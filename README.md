@@ -21,7 +21,7 @@ Before running the script, ensure you have:
 1. Clone the repository:
    ```bash
    git clone https://github.com/DeepEyeCrypto/Ubuntu-Proot.git
-   cd termux-x11-proot
+   cd Ubuntu-Proot
    chmod +x install_proot_x11.sh start-distro.sh
    ./install_proot_x11.sh
    ./start-distro.sh
