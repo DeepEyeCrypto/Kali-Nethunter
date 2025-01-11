@@ -24,5 +24,5 @@ Before running the script, ensure you have:
    pkg install wget
    git clone https://github.com/DeepEyeCrypto/Kali-Nethunter.git
    cd Kali-Nethunter
-   chmod +x install-nethunter-x11
+   chmod +x install-nethunter-x11.sh
    ./install-nethunter-x11
