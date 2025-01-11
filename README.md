@@ -20,6 +20,9 @@ Before running the script, ensure you have:
 ## Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/termux-x11-proot.git
+   git clone https://github.com/DeepEyeCrypto/Ubuntu-Proot.git
    cd termux-x11-proot
+   chmod +x install_proot_x11.sh start-distro.sh
+   ./install_proot_x11.sh
+   ./start-distro.sh
    
