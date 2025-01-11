@@ -24,5 +24,5 @@ Before running the script, ensure you have:
    cd Ubuntu-Proot
    chmod +x install_proot_x11.sh start-distro.sh
    ./install_proot_x11.sh
-   ./start-distro.sh
+   proot-distro login ubuntu
    
