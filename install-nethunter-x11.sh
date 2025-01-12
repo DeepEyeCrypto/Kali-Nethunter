@@ -1,135 +1,77 @@
 #!/data/data/com.termux/files/usr/bin/bash -e
 
-# Variables
 VERSION=2024091801
 BASE_URL=https://kali.download/nethunter-images/current/rootfs
 USERNAME=kali
-SYS_ARCH=arm64
-CHROOT=chroot/kali-${SYS_ARCH}
-IMAGE_NAME=kali-nethunter-rootfs-full-${SYS_ARCH}.tar.xz
-SHA_NAME=${IMAGE_NAME}.sha512sum
 
-# Add colors
-red='\033[1;31m'
-green='\033[1;32m'
-blue='\033[1;34m'
-reset='\033[0m'
-
-# Banner
-function print_banner() {
-    clear
-    echo -e "${blue}##################################################"
-    echo -e "##                                              ##"
-    echo -e "##  Kali NetHunter Desktop DeeEyeCrypto...      ##"
-    echo -e "##                                              ##"
-    echo -e "##################################################${reset}"
+# Function for unsupported architecture
+function unsupported_arch() {
+    echo "[*] Unsupported Architecture" && exit 1
 }
 
-# Update and install dependencies
-function check_dependencies() {
-    echo -e "${blue}[*] Updating Termux packages and installing dependencies...${reset}"
+# Function for asking user input
+function ask() {
+    while true; do
+        prompt="${2:-y/n}"
+        read -p "$1 [$prompt]: " REPLY
+        REPLY=${REPLY:-${2}}
+        case "$REPLY" in
+            Y*|y*) return 0 ;;
+            N*|n*) return 1 ;;
+        esac
+    done
+}
+
+# Function to check device architecture
+function get_arch() {
+    case $(getprop ro.product.cpu.abi) in
+        arm64-v8a) SYS_ARCH=arm64 ;;
+        armeabi|armeabi-v7a) SYS_ARCH=armhf ;;
+        *) unsupported_arch ;;
+    esac
+}
+
+# Function to install Termux-X11 and dependencies
+function install_x11() {
+    echo "[*] Installing Termux-X11 dependencies..."
     pkg update -y
-    pkg upgrade -y
-    pkg install x11-repo -y
-    pkg install termux-x11-nightly -y
-    pkg install pulseaudio -y
-    pkg install wget -y
-    pkg install xfce4 -y
-    pkg install tur-repo -y
-    pkg install firefox -y
-    pkg install proot-distro -y
-    pkg install git -y
-    termux-setup-storage
+    pkg install -y x11-repo proot-distro termux-x11 vnc-server
 }
 
-# Download rootfs
-function download_rootfs() {
-    echo -e "${blue}[*] Downloading rootfs...${reset}"
-    wget --continue "${BASE_URL}/${IMAGE_NAME}"
-    wget --continue "${BASE_URL}/${SHA_NAME}"
+# Function to configure Termux-X11 environment
+function configure_x11() {
+    echo "[*] Configuring Termux-X11 desktop..."
+    echo "export DISPLAY=:1" >> ~/.bashrc
+    mkdir -p ~/.vnc
+    echo -e "password\npassword\nn" | vncpasswd
 }
 
-# Verify rootfs integrity
-function verify_rootfs() {
-    echo -e "${blue}[*] Verifying rootfs integrity...${reset}"
-    sha512sum -c "${SHA_NAME}" || {
-        echo -e "${red}[!] Rootfs is corrupted. Exiting.${reset}"
-        exit 1
-    }
+# Function to download and install Kali rootfs
+function setup_kali() {
+    echo "[*] Setting up Kali NetHunter rootfs..."
+    IMAGE_NAME="kali-nethunter-rootfs-full-${SYS_ARCH}.tar.xz"
+    wget --continue "${BASE_URL}/${IMAGE_NAME}" || { echo "Failed to download image."; exit 1; }
+    mkdir -p kali-rootfs && tar -xf "$IMAGE_NAME" -C kali-rootfs
+    echo "[+] Rootfs extracted to kali-rootfs/"
 }
 
-# Extract rootfs
-function extract_rootfs() {
-    echo -e "${blue}[*] Extracting rootfs...${reset}"
-    mkdir -p ${CHROOT}
-    proot --link2symlink tar -xf "${IMAGE_NAME}" -C ${CHROOT}
-}
-
-# Configure X11 and XFCE4
-function setup_x11_environment() {
-    echo -e "${blue}[*] Setting up X11 and XFCE4 environment...${reset}"
-    cat > ${CHROOT}/root/.xinitrc <<- EOF
-#!/bin/sh
-xrdb $HOME/.Xresources
-xsetroot -solid black
-startxfce4 &
-EOF
-    chmod +x ${CHROOT}/root/.xinitrc
-}
-
-# Create NetHunter launcher
-function create_launcher() {
-    NH_LAUNCHER=${PREFIX}/bin/nethunter
-    cat > "$NH_LAUNCHER" <<- EOF
-#!/data/data/com.termux/files/usr/bin/bash -e
-unset LD_PRELOAD
-user="$USERNAME"
-home="/home/\$user"
-cmdline="proot --link2symlink -0 -r $CHROOT -b /dev -b /proc -b /sdcard -b $CHROOT\$home:/dev/shm -w \$home \\
-        /usr/bin/env -i HOME=\$home PATH=/usr/local/sbin:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin TERM=\$TERM LANG=C.UTF-8 /bin/bash"
-
-if [ "\$#" == "0" ]; then
-    exec \$cmdline
-else
-    \$cmdline -c "\$@"
-fi
-EOF
-    chmod +x "$NH_LAUNCHER"
-}
-
-# Create X11 desktop launcher
-function create_desktop_launcher() {
-    DESKTOP_LAUNCHER=${PREFIX}/bin/startdesktop
-    cat > "$DESKTOP_LAUNCHER" <<- EOF
-#!/data/data/com.termux/files/usr/bin/bash -e
-unset LD_PRELOAD
-export DISPLAY=:0
-export PULSE_SERVER=unix:/data/data/com.termux/files/usr/tmp/pulse-server
-proot --link2symlink -0 -r $CHROOT -b /dev -b /proc -b /sdcard -b $CHROOT/home/kali:/dev/shm -w /root \\
-        /usr/bin/env -i HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin TERM=\$TERM LANG=C.UTF-8 startxfce4
-EOF
-    chmod +x "$DESKTOP_LAUNCHER"
-}
-
-# Cleanup downloaded files
+# Function to clean up after installation
 function cleanup() {
-    echo -e "${blue}[*] Cleaning up downloaded files...${reset}"
-    rm -f "${IMAGE_NAME}" "${SHA_NAME}"
+    echo "[*] Cleaning up installation files..."
+    rm -f "${IMAGE_NAME}" || echo "No image file to remove."
+    rm -rf kali-rootfs || echo "No rootfs directory to remove."
 }
 
-# Main Function
-print_banner
-check_dependencies
-download_rootfs
-verify_rootfs
-extract_rootfs
-setup_x11_environment
-create_launcher
-create_desktop_launcher
-cleanup
+# Main installation sequence
+function main() {
+    echo "[*] Starting Kali NetHunter installation on Termux-X11..."
+    get_arch
+    install_x11
+    setup_kali
+    configure_x11
+    cleanup
+    echo "[+] Kali NetHunter with Termux-X11 installed successfully!"
+    echo "[+] To start the desktop, use: vncserver -localhost no :1"
+}
 
-# Final Instructions
-print_banner
-echo -e "${green}[=] Kali NetHunter Desktop for Termux-X11 installed successfully.${reset}"
-echo -e "${green}[+] Use 'nethunter' to access the CLI environment.${reset}"
-echo -e "${green}[+] Use 'startdesktop' to directly launch the XFCE4 desktop in Termux-X11.${reset}"
+main
