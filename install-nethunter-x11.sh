@@ -112,7 +112,8 @@ sleep 3
 $DESKTOP_CMD
 EOF
     chmod +x "$LAUNCHER"
-    log "[*] To start Termux-X11 and the desktop, run: $LAUNCHER"
+    log "[*] To start Termux-X11 and the desktop, run:"
+    log "    $LAUNCHER"
 }
 
 function enable_auto_start() {
@@ -157,7 +158,7 @@ function cleanup() {
 function print_banner() {
     clear
     log "##################################################"
-    log "#       Termux-X11 Desktop Automation Setup      #"
+    log "#                DeepEyeCrypto                   #"
     log "##################################################"
 }
 
@@ -171,6 +172,8 @@ function main() {
     test_environment
     cleanup
     success "[*] Termux-X11 setup completed. Restart Termux to apply changes."
+    success "[+] Start Termux-X11 with the command:"
+    success "    $HOME/termux-x11/start-x11.sh"
 }
 
 main
