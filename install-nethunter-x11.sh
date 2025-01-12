@@ -59,25 +59,6 @@ function install_dependencies() {
     }
 }
 
-function setup_termux_x11() {
-    log "[*] Setting up Termux-X11..."
-    if [ ! -d "$INSTALL_DIR" ]; then
-        mkdir -p "$INSTALL_DIR"
-    fi
-
-    wget -O "$INSTALL_DIR/termux-x11.apk" https://github.com/termux/termux-x11/releases/latest/download/termux-x11.apk
-    if [ -f "$INSTALL_DIR/termux-x11.apk" ]; then
-        log "[*] APK downloaded. Attempting to install via ADB..."
-        adb install "$INSTALL_DIR/termux-x11.apk" || {
-            warn "[!] ADB installation failed. Please install manually:"
-            warn "adb install $INSTALL_DIR/termux-x11.apk"
-        }
-    else
-        error "[!] Failed to download Termux-X11 APK."
-        exit 1
-    fi
-}
-
 function configure_x11() {
     log "[*] Configuring X11 environment..."
     export PULSE_SERVER=127.0.0.1
@@ -160,7 +141,7 @@ function test_environment() {
     if termux-x11 --help >/dev/null 2>&1; then
         success "[+] Termux-X11 is installed correctly."
     else
-        error "[!] Termux-X11 installation failed."
+        error "[!] Termux-X11 installation failed or not found."
     fi
     if pulseaudio --check >/dev/null 2>&1; then
         success "[+] PulseAudio is running."
@@ -170,8 +151,7 @@ function test_environment() {
 }
 
 function cleanup() {
-    log "[*] Cleaning up..."
-    rm -f "$INSTALL_DIR/termux-x11.apk"
+    log "[*] Cleaning up temporary files..."
 }
 
 function print_banner() {
@@ -185,7 +165,6 @@ function main() {
     print_banner
     check_architecture
     install_dependencies
-    setup_termux_x11
     configure_x11
     setup_desktop_environment
     enable_auto_start
