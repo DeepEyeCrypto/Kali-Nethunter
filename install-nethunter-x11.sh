@@ -1,41 +1,60 @@
 #!/data/data/com.termux/files/usr/bin/bash -e
 
-VERSION=20250112
-USERNAME=termux
-TERMUX_HOME="$HOME"
-INSTALL_DIR="$TERMUX_HOME/termux-x11"
-LOG_FILE="$HOME/termux-x11-install.log"
+VERSION=2024091801
+BASE_URL=https://kali.download/nethunter-images/current/rootfs
+USERNAME=kali
+LOG_FILE="$HOME/nethunter-installation.log"
 
-# Colors for messages
-RED='\033[1;31m'
-GREEN='\033[1;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[1;34m'
-RESET='\033[0m'
+# Add some colours
+red='\033[1;31m'
+green='\033[1;32m'
+yellow='\033[1;33m'
+blue='\033[1;34m'
+light_cyan='\033[1;96m'
+reset='\033[0m'
 
+# Logging function
 function log() {
-    echo -e "${BLUE}$*${RESET}" | tee -a "$LOG_FILE"
-}
-
-function warn() {
-    echo -e "${YELLOW}$*${RESET}" | tee -a "$LOG_FILE"
-}
-
-function error() {
-    echo -e "${RED}$*${RESET}" | tee -a "$LOG_FILE" >&2
-}
-
-function success() {
-    echo -e "${GREEN}$*${RESET}" | tee -a "$LOG_FILE"
+    local msg="$1"
+    local level="${2:-INFO}"
+    printf "[$level] $msg\n" | tee -a "$LOG_FILE"
 }
 
 function unsupported_arch() {
-    error "[*] Unsupported Architecture. Exiting."
+    log "[*] Unsupported Architecture" "ERROR"
     exit 1
 }
 
-function check_architecture() {
-    log "[*] Checking device architecture..."
+function ask() {
+    while true; do
+        if [ "${2:-}" = "Y" ]; then
+            prompt="Y/n"
+            default=Y
+        elif [ "${2:-}" = "N" ]; then
+            prompt="y/N"
+            default=N
+        else
+            prompt="y/n"
+            default=
+        fi
+
+        printf "${light_cyan}\n[?] "
+        read -p "$1 [$prompt] " REPLY
+        if [ -z "$REPLY" ]; then
+            REPLY=$default
+        fi
+
+        printf "${reset}"
+
+        case "$REPLY" in
+            Y*|y*) return 0 ;;
+            N*|n*) return 1 ;;
+        esac
+    done
+}
+
+function get_arch() {
+    log "Checking device architecture..."
     case $(getprop ro.product.cpu.abi) in
         arm64-v8a)
             SYS_ARCH=arm64
@@ -47,133 +66,112 @@ function check_architecture() {
             unsupported_arch
             ;;
     esac
+    log "Device architecture: $SYS_ARCH"
 }
 
-function install_dependencies() {
-    log "[*] Installing dependencies..."
-    apt update && apt upgrade -y
-    apt install -y x11-repo xwayland pulseaudio proot wget tar xfce4 xfce4-terminal \
-        htop neofetch file-roller pcmanfm || {
-        error "[!] Failed to install dependencies."
+function prepare_fs() {
+    if [ -d ${CHROOT} ]; then
+        if ask "Existing rootfs directory found. Delete and create a new one?" "N"; then
+            rm -rf ${CHROOT}
+            log "Deleted existing rootfs directory."
+        else
+            KEEP_CHROOT=1
+            log "Using existing rootfs directory."
+        fi
+    fi
+}
+
+function check_dependencies() {
+    log "Checking package dependencies..."
+    apt-get update -y &>> "$LOG_FILE" || apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confnew" dist-upgrade -y &>> "$LOG_FILE"
+    for i in proot tar wget; do
+        if [ -e "$PREFIX"/bin/$i ]; then
+            log "$i is installed."
+        else
+            log "Installing $i..."
+            apt install -y $i &>> "$LOG_FILE" || {
+                log "Failed to install $i." "ERROR"
+                exit 1
+            }
+        fi
+    done
+    log "All dependencies are satisfied."
+}
+
+function install_x11_desktop() {
+    log "Installing Termux-X11..."
+    apt install -y x11-repo &>> "$LOG_FILE" || {
+        log "Failed to install x11-repo." "ERROR"
         exit 1
     }
+    apt install -y termux-x11 &>> "$LOG_FILE" || {
+        log "Failed to install Termux-X11." "ERROR"
+        exit 1
+    }
+
+    printf "\n${blue}[?] Choose your preferred desktop environment:${reset}\n"
+    printf "[1] XFCE\n[2] LXDE\n[3] GNOME\n"
+    read -p "Enter your choice (1/2/3): " desktop_choice
+
+    case $desktop_choice in
+        1)
+            apt install -y xfce4 firefox &>> "$LOG_FILE" || {
+                log "Failed to install XFCE desktop environment." "ERROR"
+                exit 1
+            }
+            DESKTOP_ENV="XFCE"
+            ;;
+        2)
+            apt install -y lxde-core lxterminal firefox &>> "$LOG_FILE" || {
+                log "Failed to install LXDE desktop environment." "ERROR"
+                exit 1
+            }
+            DESKTOP_ENV="LXDE"
+            ;;
+        3)
+            apt install -y gnome-session gnome-terminal firefox &>> "$LOG_FILE" || {
+                log "Failed to install GNOME desktop environment." "ERROR"
+                exit 1
+            }
+            DESKTOP_ENV="GNOME"
+            ;;
+        *)
+            log "Invalid choice. Defaulting to XFCE."
+            apt install -y xfce4 firefox &>> "$LOG_FILE" || {
+                log "Failed to install XFCE desktop environment." "ERROR"
+                exit 1
+            }
+            DESKTOP_ENV="XFCE"
+            ;;
+    esac
+    log "$DESKTOP_ENV Desktop installed successfully."
 }
 
-function configure_x11() {
-    log "[*] Configuring X11 environment..."
-    export PULSE_SERVER=127.0.0.1
-    pulseaudio --start
-
-    # Add environment variables to .bashrc
-    if ! grep -q "export DISPLAY=:0" ~/.bashrc; then
-        echo "export DISPLAY=:0" >> ~/.bashrc
-    fi
-    if ! grep -q "export PULSE_SERVER=127.0.0.1" ~/.bashrc; then
-        echo "export PULSE_SERVER=127.0.0.1" >> ~/.bashrc
-    fi
-    source ~/.bashrc
-}
-
-function setup_desktop_environment() {
-    log "[*] Setting up Desktop Environment..."
-    mkdir -p ~/.vnc
-
-    read -p "Enter desired VNC port (default: 5901): " VNC_PORT
-    VNC_PORT=${VNC_PORT:-5901}
-
-    read -p "Enter desired resolution (e.g., 1280x720, default: 1920x1080): " RESOLUTION
-    RESOLUTION=${RESOLUTION:-1920x1080}
-
-    log "[*] Choose your desktop environment:"
-    log "1. XFCE (default)"
-    log "2. LXDE (lightweight)"
-    read -p "Enter your choice (1 or 2): " DE_CHOICE
-    DE_CHOICE=${DE_CHOICE:-1}
-
-    if [ "$DE_CHOICE" -eq 2 ]; then
-        apt install -y lxde
-        DESKTOP_CMD="startlxde"
-    else
-        DESKTOP_CMD="startxfce4"
-    fi
-
-    echo "#!/bin/sh" > ~/.vnc/xstartup
-    echo "$DESKTOP_CMD" >> ~/.vnc/xstartup
-    chmod +x ~/.vnc/xstartup
-
-    LAUNCHER="$INSTALL_DIR/start-x11.sh"
-    cat > "$LAUNCHER" <<- EOF
+function configure_x11_launcher() {
+    log "Configuring desktop launcher..."
+    cat > ${PREFIX}/bin/start-desktop <<- EOF
 #!/data/data/com.termux/files/usr/bin/bash
-export DISPLAY=:0
-export PULSE_SERVER=127.0.0.1
-pulseaudio --start
-termux-x11 --vnc-port=$VNC_PORT --resolution=$RESOLUTION &
-sleep 3
-$DESKTOP_CMD
+termux-x11 :1 &
+sleep 5
+export DISPLAY=:1
+start${DESKTOP_ENV,,}4
 EOF
-    chmod +x "$LAUNCHER"
-    log "[*] To start Termux-X11 and the desktop, run:"
-    log "    $LAUNCHER"
+    chmod +x ${PREFIX}/bin/start-desktop
+    log "Desktop launcher configured for $DESKTOP_ENV. Run 'start-desktop' to launch."
 }
 
-function enable_auto_start() {
-    read -p "Enable auto-start for Termux-X11? (y/n, default: y): " AUTO_START
-    AUTO_START=${AUTO_START:-y}
-
-    if [[ "$AUTO_START" =~ ^[Yy]$ ]]; then
-        log "[*] Enabling auto-start..."
-        AUTO_START_SCRIPT="$PREFIX/etc/profile.d/start-x11.sh"
-        cat > "$AUTO_START_SCRIPT" <<- EOF
-#!/data/data/com.termux/files/usr/bin/bash
-if [ ! -z "\$TERMUX_X11_AUTO_START" ]; then
-    $INSTALL_DIR/start-x11.sh
-fi
-EOF
-        chmod +x "$AUTO_START_SCRIPT"
-        echo "export TERMUX_X11_AUTO_START=1" >> ~/.bashrc
-        source ~/.bashrc
-    else
-        log "[*] Auto-start disabled."
-    fi
+function post_install_cleanup() {
+    log "Cleaning up installation files..."
+    rm -rf ${CHROOT} &>> "$LOG_FILE"
+    log "Installation files cleaned up."
 }
 
-function test_environment() {
-    log "[*] Testing Termux-X11 setup..."
-    if termux-x11 --help >/dev/null 2>&1; then
-        success "[+] Termux-X11 is installed correctly."
-    else
-        error "[!] Termux-X11 installation failed or not found."
-    fi
-    if pulseaudio --check >/dev/null 2>&1; then
-        success "[+] PulseAudio is running."
-    else
-        error "[!] PulseAudio setup failed."
-    fi
-}
-
-function cleanup() {
-    log "[*] Cleaning up temporary files..."
-}
-
-function print_banner() {
-    clear
-    log "##################################################"
-    log "#                DeepEyeCrypto                   #"
-    log "##################################################"
-}
-
-function main() {
-    print_banner
-    check_architecture
-    install_dependencies
-    configure_x11
-    setup_desktop_environment
-    enable_auto_start
-    test_environment
-    cleanup
-    success "[*] Termux-X11 setup completed. Restart Termux to apply changes."
-    success "[+] Start Termux-X11 with the command:"
-    success "    $HOME/termux-x11/start-x11.sh"
-}
-
-main
+# Main Execution
+log "Starting NetHunter installation."
+get_arch
+prepare_fs
+check_dependencies
+install_x11_desktop
+configure_x11_launcher
+post_install_cleanup
+log "NetHunter installation completed successfully."
