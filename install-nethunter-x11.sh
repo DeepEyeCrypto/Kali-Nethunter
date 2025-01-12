@@ -1,77 +1,197 @@
 #!/data/data/com.termux/files/usr/bin/bash -e
 
-VERSION=2024091801
-BASE_URL=https://kali.download/nethunter-images/current/rootfs
-USERNAME=kali
+VERSION=20250112
+USERNAME=termux
+TERMUX_HOME="$HOME"
+INSTALL_DIR="$TERMUX_HOME/termux-x11"
+LOG_FILE="$HOME/termux-x11-install.log"
 
-# Function for unsupported architecture
+# Colors for messages
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[1;34m'
+RESET='\033[0m'
+
+function log() {
+    echo -e "${BLUE}$*${RESET}" | tee -a "$LOG_FILE"
+}
+
+function warn() {
+    echo -e "${YELLOW}$*${RESET}" | tee -a "$LOG_FILE"
+}
+
+function error() {
+    echo -e "${RED}$*${RESET}" | tee -a "$LOG_FILE" >&2
+}
+
+function success() {
+    echo -e "${GREEN}$*${RESET}" | tee -a "$LOG_FILE"
+}
+
 function unsupported_arch() {
-    echo "[*] Unsupported Architecture" && exit 1
+    error "[*] Unsupported Architecture. Exiting."
+    exit 1
 }
 
-# Function for asking user input
-function ask() {
-    while true; do
-        prompt="${2:-y/n}"
-        read -p "$1 [$prompt]: " REPLY
-        REPLY=${REPLY:-${2}}
-        case "$REPLY" in
-            Y*|y*) return 0 ;;
-            N*|n*) return 1 ;;
-        esac
-    done
-}
-
-# Function to check device architecture
-function get_arch() {
+function check_architecture() {
+    log "[*] Checking device architecture..."
     case $(getprop ro.product.cpu.abi) in
-        arm64-v8a) SYS_ARCH=arm64 ;;
-        armeabi|armeabi-v7a) SYS_ARCH=armhf ;;
-        *) unsupported_arch ;;
+        arm64-v8a)
+            SYS_ARCH=arm64
+            ;;
+        armeabi|armeabi-v7a)
+            SYS_ARCH=armhf
+            ;;
+        *)
+            unsupported_arch
+            ;;
     esac
 }
 
-# Function to install Termux-X11 and dependencies
-function install_x11() {
-    echo "[*] Installing Termux-X11 dependencies..."
-    pkg update -y
-    pkg install -y x11-repo proot-distro termux-x11 vnc-server
+function install_dependencies() {
+    log "[*] Installing dependencies..."
+    apt update && apt upgrade -y
+    apt install -y x11-repo xwayland pulseaudio proot wget tar xfce4 xfce4-terminal \
+        htop neofetch file-roller pcmanfm || {
+        error "[!] Failed to install dependencies."
+        exit 1
+    }
 }
 
-# Function to configure Termux-X11 environment
+function setup_termux_x11() {
+    log "[*] Setting up Termux-X11..."
+    if [ ! -d "$INSTALL_DIR" ]; then
+        mkdir -p "$INSTALL_DIR"
+    fi
+
+    wget -O "$INSTALL_DIR/termux-x11.apk" https://github.com/termux/termux-x11/releases/latest/download/termux-x11.apk
+    if [ -f "$INSTALL_DIR/termux-x11.apk" ]; then
+        log "[*] APK downloaded. Attempting to install via ADB..."
+        adb install "$INSTALL_DIR/termux-x11.apk" || {
+            warn "[!] ADB installation failed. Please install manually:"
+            warn "adb install $INSTALL_DIR/termux-x11.apk"
+        }
+    else
+        error "[!] Failed to download Termux-X11 APK."
+        exit 1
+    fi
+}
+
 function configure_x11() {
-    echo "[*] Configuring Termux-X11 desktop..."
-    echo "export DISPLAY=:1" >> ~/.bashrc
+    log "[*] Configuring X11 environment..."
+    export PULSE_SERVER=127.0.0.1
+    pulseaudio --start
+
+    # Add environment variables to .bashrc
+    if ! grep -q "export DISPLAY=:0" ~/.bashrc; then
+        echo "export DISPLAY=:0" >> ~/.bashrc
+    fi
+    if ! grep -q "export PULSE_SERVER=127.0.0.1" ~/.bashrc; then
+        echo "export PULSE_SERVER=127.0.0.1" >> ~/.bashrc
+    fi
+    source ~/.bashrc
+}
+
+function setup_desktop_environment() {
+    log "[*] Setting up Desktop Environment..."
     mkdir -p ~/.vnc
-    echo -e "password\npassword\nn" | vncpasswd
+
+    read -p "Enter desired VNC port (default: 5901): " VNC_PORT
+    VNC_PORT=${VNC_PORT:-5901}
+
+    read -p "Enter desired resolution (e.g., 1280x720, default: 1920x1080): " RESOLUTION
+    RESOLUTION=${RESOLUTION:-1920x1080}
+
+    log "[*] Choose your desktop environment:"
+    log "1. XFCE (default)"
+    log "2. LXDE (lightweight)"
+    read -p "Enter your choice (1 or 2): " DE_CHOICE
+    DE_CHOICE=${DE_CHOICE:-1}
+
+    if [ "$DE_CHOICE" -eq 2 ]; then
+        apt install -y lxde
+        DESKTOP_CMD="startlxde"
+    else
+        DESKTOP_CMD="startxfce4"
+    fi
+
+    echo "#!/bin/sh" > ~/.vnc/xstartup
+    echo "$DESKTOP_CMD" >> ~/.vnc/xstartup
+    chmod +x ~/.vnc/xstartup
+
+    LAUNCHER="$INSTALL_DIR/start-x11.sh"
+    cat > "$LAUNCHER" <<- EOF
+#!/data/data/com.termux/files/usr/bin/bash
+export DISPLAY=:0
+export PULSE_SERVER=127.0.0.1
+pulseaudio --start
+termux-x11 --vnc-port=$VNC_PORT --resolution=$RESOLUTION &
+sleep 3
+$DESKTOP_CMD
+EOF
+    chmod +x "$LAUNCHER"
+    log "[*] To start Termux-X11 and the desktop, run: $LAUNCHER"
 }
 
-# Function to download and install Kali rootfs
-function setup_kali() {
-    echo "[*] Setting up Kali NetHunter rootfs..."
-    IMAGE_NAME="kali-nethunter-rootfs-full-${SYS_ARCH}.tar.xz"
-    wget --continue "${BASE_URL}/${IMAGE_NAME}" || { echo "Failed to download image."; exit 1; }
-    mkdir -p kali-rootfs && tar -xf "$IMAGE_NAME" -C kali-rootfs
-    echo "[+] Rootfs extracted to kali-rootfs/"
+function enable_auto_start() {
+    read -p "Enable auto-start for Termux-X11? (y/n, default: y): " AUTO_START
+    AUTO_START=${AUTO_START:-y}
+
+    if [[ "$AUTO_START" =~ ^[Yy]$ ]]; then
+        log "[*] Enabling auto-start..."
+        AUTO_START_SCRIPT="$PREFIX/etc/profile.d/start-x11.sh"
+        cat > "$AUTO_START_SCRIPT" <<- EOF
+#!/data/data/com.termux/files/usr/bin/bash
+if [ ! -z "\$TERMUX_X11_AUTO_START" ]; then
+    $INSTALL_DIR/start-x11.sh
+fi
+EOF
+        chmod +x "$AUTO_START_SCRIPT"
+        echo "export TERMUX_X11_AUTO_START=1" >> ~/.bashrc
+        source ~/.bashrc
+    else
+        log "[*] Auto-start disabled."
+    fi
 }
 
-# Function to clean up after installation
+function test_environment() {
+    log "[*] Testing Termux-X11 setup..."
+    if termux-x11 --help >/dev/null 2>&1; then
+        success "[+] Termux-X11 is installed correctly."
+    else
+        error "[!] Termux-X11 installation failed."
+    fi
+    if pulseaudio --check >/dev/null 2>&1; then
+        success "[+] PulseAudio is running."
+    else
+        error "[!] PulseAudio setup failed."
+    fi
+}
+
 function cleanup() {
-    echo "[*] Cleaning up installation files..."
-    rm -f "${IMAGE_NAME}" || echo "No image file to remove."
-    rm -rf kali-rootfs || echo "No rootfs directory to remove."
+    log "[*] Cleaning up..."
+    rm -f "$INSTALL_DIR/termux-x11.apk"
 }
 
-# Main installation sequence
+function print_banner() {
+    clear
+    log "##################################################"
+    log "#       Termux-X11 Desktop Automation Setup      #"
+    log "##################################################"
+}
+
 function main() {
-    echo "[*] Starting Kali NetHunter installation on Termux-X11..."
-    get_arch
-    install_x11
-    setup_kali
+    print_banner
+    check_architecture
+    install_dependencies
+    setup_termux_x11
     configure_x11
+    setup_desktop_environment
+    enable_auto_start
+    test_environment
     cleanup
-    echo "[+] Kali NetHunter with Termux-X11 installed successfully!"
-    echo "[+] To start the desktop, use: vncserver -localhost no :1"
+    success "[*] Termux-X11 setup completed. Restart Termux to apply changes."
 }
 
 main
