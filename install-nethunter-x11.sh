@@ -66,16 +66,27 @@ function check_dependencies() {
 
 function get_rootfs() {
     printf "${blue}[+] Downloading NetHunter rootfs...${reset}\n"
-    wget -q --show-progress "${BASE_URL}/${IMAGE_NAME}"
-    wget -q --show-progress "${BASE_URL}/${SHA_NAME}"
+    wget -q --show-progress "${BASE_URL}/${IMAGE_NAME}" || {
+        printf "${red}[!] Failed to download ${IMAGE_NAME}. Retrying...${reset}\n"
+        wget -q --show-progress "${BASE_URL}/${IMAGE_NAME}"
+    }
+    wget -q --show-progress "${BASE_URL}/${SHA_NAME}" || {
+        printf "${red}[!] Failed to download ${SHA_NAME}. Retrying...${reset}\n"
+        wget -q --show-progress "${BASE_URL}/${SHA_NAME}"
+    }
 }
 
 function verify_sha() {
     printf "${blue}[+] Verifying rootfs integrity...${reset}\n"
-    sha512sum -c "${SHA_NAME}" || {
-        printf "${red}[!] Integrity check failed. Exiting.${reset}\n"
-        exit 1
-    }
+    if ! sha512sum -c "${SHA_NAME}"; then
+        printf "${red}[!] Integrity check failed. Re-downloading files.${reset}\n"
+        rm -f "${IMAGE_NAME}" "${SHA_NAME}"
+        get_rootfs
+        sha512sum -c "${SHA_NAME}" || {
+            printf "${red}[!] Integrity check failed again. Exiting.${reset}\n"
+            exit 1
+        }
+    fi
 }
 
 function extract_rootfs() {
