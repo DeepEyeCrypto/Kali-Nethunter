@@ -1,56 +1,100 @@
 #!/bin/bash
 
-# Function to update and install necessary packages
-setup_environment() {
-    echo "[*] Updating and upgrading Termux packages..."
-    pkg update -y && pkg upgrade -y
+# Update and Upgrade System
+sudo apt update -y
+sudo apt upgrade -y
 
-    echo "[*] Installing required packages..."
-    pkg install -y wget proot tar pulseaudio termux-x11 xfce4-session tigervnc openbox
-}
+# Install Desktop Environment and Necessary Packages
+sudo apt install -y xfce4 xfce4-goodies xrdp git wget curl pulseaudio plank cairo-dock ruby libinput-tools build-essential
 
-# Function to install Kali Linux
-install_kali_linux() {
-    echo "[*] Downloading and setting up Kali Linux (Nethunter)..."
-    wget -O install-nethunter-termux https://offs.ec/2MceZWr
-    chmod +x install-nethunter-termux
-    ./install-nethunter-termux
-}
+# Enable PulseAudio over Network
+sudo systemctl start pulseaudio
+sudo pactl load-module module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1
 
-# Function to configure VNC and GUI
-configure_vnc() {
-    echo "[*] Configuring VNC with XFCE desktop environment..."
-    mkdir -p ~/.vnc
-    cat <<EOF > ~/.vnc/xstartup
-#!/bin/bash
-xrdb $HOME/.Xresources
-startxfce4 &
-EOF
-    chmod +x ~/.vnc/xstartup
-}
+# Install macOS-like Theme and Icons
+mkdir -p ~/.themes ~/.icons
+cd ~
 
-# Function to set up audio with Pulseaudio
-setup_audio() {
-    echo "[*] Setting up Pulseaudio for audio forwarding..."
-    pulseaudio --start
-}
+# macOS GTK Theme
+git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git
+cd WhiteSur-gtk-theme
+./install.sh -c dark -n nord -t all
 
-# Function to start Termux-X11 and Kali Linux
-start_kali_gui() {
-    echo "[*] Starting Termux X11 server..."
-    termux-x11 :1 &
+# macOS Icon Theme
+cd ~
+git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git
+cd WhiteSur-icon-theme
+./install.sh
 
-    echo "[*] Launching Kali Linux with XFCE GUI..."
-    nethunter kex &
-}
+# Set macOS-like Theme and Icons
+xfconf-query -c xsettings -p /Net/ThemeName -s "WhiteSur-dark"
+xfconf-query -c xsettings -p /Net/IconThemeName -s "WhiteSur-dark"
 
-# Execute all functions
-setup_environment
-install_kali_linux
-configure_vnc
-setup_audio
-start_kali_gui
+# Download macOS Wallpapers
+cd ~
+wget -O ~/big-sur.jpg https://4kwallpapers.com/images/wallpapers/macos-big-sur-apple-layers-fluidic-colorful-wwdc-stock-4096x2304-1455.jpg
 
-# Final message
-echo "[*] Setup complete!"
-echo "Open Termux X11 or VNC Viewer with 'localhost:1' to access the Kali Linux GUI."
+# Set Default Wallpaper
+xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s ~/big-sur.jpg
+
+# Configure Plank (Dock)
+mkdir -p ~/.config/autostart
+echo "[Desktop Entry]
+Type=Application
+Exec=plank
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Plank
+Comment=Start Plank on XFCE startup" > ~/.config/autostart/plank.desktop
+
+# Configure Cairo Dock
+mkdir -p ~/.config/autostart
+echo "[Desktop Entry]
+Type=Application
+Exec=cairo-dock
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Cairo Dock
+Comment=Start Cairo Dock on XFCE startup" > ~/.config/autostart/cairo-dock.desktop
+
+# Install and Configure Fusuma for Gestures
+sudo gem install fusuma
+mkdir -p ~/.config/fusuma
+echo "
+swipe:
+  3:
+    left:
+      command: 'xdotool key alt+Right'
+    right:
+      command: 'xdotool key alt+Left'
+    up:
+      command: 'xdotool key super'
+    down:
+      command: 'xdotool key super+Shift'
+pinch:
+  in:
+    command: 'xdotool key ctrl+plus'
+  out:
+    command: 'xdotool key ctrl+minus'
+" > ~/.config/fusuma/config.yml
+echo "[Desktop Entry]
+Type=Application
+Exec=fusuma
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Fusuma
+Comment=Start Fusuma for gestures on XFCE startup" > ~/.config/autostart/fusuma.desktop
+
+# Enable XFWM4 Compositing and Customize Panel
+xfconf-query -c xfwm4 -p /general/use_compositing -s true
+xfconf-query -c xfce4-panel -p /panels/panel-0/position -s "p=8;x=0;y=0"
+
+# macOS-like Keyboard Shortcuts
+xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Alt>Tab" -s "xfce4-appfinder --collapsed"
+xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Super>Space" -s "xfce4-appfinder"
+
+# Reboot System
+echo "Setup complete. Please reboot your system to apply all changes."
