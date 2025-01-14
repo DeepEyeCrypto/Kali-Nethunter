@@ -1,48 +1,44 @@
 #!/bin/bash
 
-# Update and upgrade Termux packages
-pkg update -y && pkg upgrade -y
+# Update and install necessary packages
+pkg update && pkg upgrade -y
+pkg install proot-distro x11-repo -y
+pkg install xorg-server xfce4 xfce4-goodies -y
 
-# Install necessary packages
-pkg install -y proot-distro x11-repo
-
-# Install Ubuntu Proot-Distro
+# Install Ubuntu distribution
 proot-distro install ubuntu
 
-# Create a script to run Ubuntu
-cat << 'EOF' > ~/start-ubuntu.sh
+# Create a script to start Ubuntu with XFCE and X11
+cat <<EOF > ~/start-ubuntu-xfce-x11.sh
 #!/bin/bash
-unset LD_PRELOAD
-proot-distro login ubuntu
+
+# Start the Xserver
+export DISPLAY=:1
+
+# Log into the Ubuntu shell and start XFCE
+proot-distro login ubuntu <<'EOL'
+apt update && apt upgrade -y
+export DISPLAY=:1
+startxfce4 &
+
+# Keep the shell open
+bash
+EOL
 EOF
 
-chmod +x ~/start-ubuntu.sh
-
-# Start Ubuntu and install the desktop environment
-~/start-ubuntu.sh << 'EOF'
-apt update -y
-apt upgrade -y
-
-# Install Ubuntu desktop environment
-apt install -y lxde-core lxde-icon-theme dbus-x11
-
-# Set up LXDE to start with an X11 server
-echo "#!/bin/bash
-export DISPLAY=:0
-startlxde" > ~/.xinitrc
-chmod +x ~/.xinitrc
-
-# Install and configure dbus
-apt install -y dbus
-dbus-uuidgen > /var/lib/dbus/machine-id
-
-EOF
+# Make the script executable
+chmod +x ~/start-ubuntu-xfce-x11.sh
 
 # Instructions for the user
-echo "Installation completed. You can start the Ubuntu environment by running:"
-echo "~/start-ubuntu.sh"
-echo "Then start the X11 server in Termux by running:"
-echo "startx"
-echo "You can then access the LXDE desktop environment directly on your device."
+echo "
+Setup complete!
 
-# End of script
+To start Ubuntu with XFCE desktop environment using X11, follow these steps:
+
+1. Start the XServer XSDL app on your Android device.
+
+2. In Termux, run the following command:
+   ./start-ubuntu-xfce-x11.sh
+
+Enjoy your Ubuntu with XFCE desktop environment on Termux using X11!
+"
