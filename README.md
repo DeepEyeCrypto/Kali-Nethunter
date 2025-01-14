@@ -22,7 +22,7 @@ Before running the script, ensure you have:
    ```bash
    termux-setup-storage
    pkg install wget
-   git clone https://github.com/DeepEyeCrypto/Kali-Nethunter.git
-   cd Kali-Nethunter
+   cd ~
+   wget https://github.com/DeepEyeCrypto/Kali-Nethunter/raw/refs/heads/main/install-nethunter-x11.sh
    chmod +x install-nethunter-x11.sh
-   ./install-nethunter-x11.sh
+   bash ~/install-nethunter-x11.sh
