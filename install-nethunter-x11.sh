@@ -1,100 +1,48 @@
 #!/bin/bash
 
-# Update and Upgrade System
-sudo apt update -y
-sudo apt upgrade -y
+# Update and upgrade Termux packages
+pkg update -y && pkg upgrade -y
 
-# Install Desktop Environment and Necessary Packages
-sudo apt install -y xfce4 xfce4-goodies xrdp git wget curl pulseaudio plank cairo-dock ruby libinput-tools build-essential
+# Install necessary packages
+pkg install -y proot-distro x11-repo
 
-# Enable PulseAudio over Network
-sudo systemctl start pulseaudio
-sudo pactl load-module module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1
+# Install Ubuntu Proot-Distro
+proot-distro install ubuntu
 
-# Install macOS-like Theme and Icons
-mkdir -p ~/.themes ~/.icons
-cd ~
+# Create a script to run Ubuntu
+cat << 'EOF' > ~/start-ubuntu.sh
+#!/bin/bash
+unset LD_PRELOAD
+proot-distro login ubuntu
+EOF
 
-# macOS GTK Theme
-git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git
-cd WhiteSur-gtk-theme
-./install.sh -c dark -n nord -t all
+chmod +x ~/start-ubuntu.sh
 
-# macOS Icon Theme
-cd ~
-git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git
-cd WhiteSur-icon-theme
-./install.sh
+# Start Ubuntu and install the desktop environment
+~/start-ubuntu.sh << 'EOF'
+apt update -y
+apt upgrade -y
 
-# Set macOS-like Theme and Icons
-xfconf-query -c xsettings -p /Net/ThemeName -s "WhiteSur-dark"
-xfconf-query -c xsettings -p /Net/IconThemeName -s "WhiteSur-dark"
+# Install Ubuntu desktop environment
+apt install -y lxde-core lxde-icon-theme dbus-x11
 
-# Download macOS Wallpapers
-cd ~
-wget -O ~/big-sur.jpg https://4kwallpapers.com/images/wallpapers/macos-big-sur-apple-layers-fluidic-colorful-wwdc-stock-4096x2304-1455.jpg
+# Set up LXDE to start with an X11 server
+echo "#!/bin/bash
+export DISPLAY=:0
+startlxde" > ~/.xinitrc
+chmod +x ~/.xinitrc
 
-# Set Default Wallpaper
-xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s ~/big-sur.jpg
+# Install and configure dbus
+apt install -y dbus
+dbus-uuidgen > /var/lib/dbus/machine-id
 
-# Configure Plank (Dock)
-mkdir -p ~/.config/autostart
-echo "[Desktop Entry]
-Type=Application
-Exec=plank
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Plank
-Comment=Start Plank on XFCE startup" > ~/.config/autostart/plank.desktop
+EOF
 
-# Configure Cairo Dock
-mkdir -p ~/.config/autostart
-echo "[Desktop Entry]
-Type=Application
-Exec=cairo-dock
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Cairo Dock
-Comment=Start Cairo Dock on XFCE startup" > ~/.config/autostart/cairo-dock.desktop
+# Instructions for the user
+echo "Installation completed. You can start the Ubuntu environment by running:"
+echo "~/start-ubuntu.sh"
+echo "Then start the X11 server in Termux by running:"
+echo "startx"
+echo "You can then access the LXDE desktop environment directly on your device."
 
-# Install and Configure Fusuma for Gestures
-sudo gem install fusuma
-mkdir -p ~/.config/fusuma
-echo "
-swipe:
-  3:
-    left:
-      command: 'xdotool key alt+Right'
-    right:
-      command: 'xdotool key alt+Left'
-    up:
-      command: 'xdotool key super'
-    down:
-      command: 'xdotool key super+Shift'
-pinch:
-  in:
-    command: 'xdotool key ctrl+plus'
-  out:
-    command: 'xdotool key ctrl+minus'
-" > ~/.config/fusuma/config.yml
-echo "[Desktop Entry]
-Type=Application
-Exec=fusuma
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=Fusuma
-Comment=Start Fusuma for gestures on XFCE startup" > ~/.config/autostart/fusuma.desktop
-
-# Enable XFWM4 Compositing and Customize Panel
-xfconf-query -c xfwm4 -p /general/use_compositing -s true
-xfconf-query -c xfce4-panel -p /panels/panel-0/position -s "p=8;x=0;y=0"
-
-# macOS-like Keyboard Shortcuts
-xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Alt>Tab" -s "xfce4-appfinder --collapsed"
-xfconf-query -c xfce4-keyboard-shortcuts -p "/commands/custom/<Super>Space" -s "xfce4-appfinder"
-
-# Reboot System
-echo "Setup complete. Please reboot your system to apply all changes."
+# End of script
